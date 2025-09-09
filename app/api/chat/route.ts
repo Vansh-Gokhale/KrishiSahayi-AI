@@ -1,6 +1,11 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { NextRequest, NextResponse } from 'next/server';
 
+// Ensure this route runs on the Node.js runtime in Vercel (not Edge)
+export const runtime = 'nodejs';
+// Disable caching for dynamic AI responses
+export const dynamic = 'force-dynamic';
+
 // Initialize Gemini AI
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
