@@ -39,7 +39,7 @@ export default function KrishiSahayiAI() {
   const voicesRef = useRef<SpeechSynthesisVoice[] | null>(null)
 
   useEffect(() => {
-    // Setup Web Speech API if available
+    // Setup Web Speech API if available; ensure mic permission on mobile iOS/Android browsers occurs after user gesture only
     const SpeechRecognitionImpl = (typeof window !== 'undefined') && ((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition)
     if (SpeechRecognitionImpl) {
       const recognition = new SpeechRecognitionImpl()
@@ -271,13 +271,20 @@ export default function KrishiSahayiAI() {
   const clearSelectedImage = () => setSelectedImage(null)
 
   const toggleRecording = () => {
-    if (!recognitionRef.current) return
+    if (!recognitionRef.current) {
+      alert(language === 'malayalam' ? 'നിങ്ങളുടെ ബ്രൗസർ മൈക്ക് പിന്തുണയ്‌ക്കുന്നില്ല.' : 'Your browser does not support microphone speech recognition.')
+      return
+    }
     if (isRecording) {
       recognitionRef.current.stop()
       setIsRecording(false)
     } else {
       try {
         recognitionRef.current.lang = language === 'malayalam' ? 'ml-IN' : 'en-IN'
+        // Prompt user media to ensure permission on mobile before starting recognition
+        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+          navigator.mediaDevices.getUserMedia({ audio: true }).catch(() => {})
+        }
         recognitionRef.current.start()
         setIsRecording(true)
       } catch (err) {
@@ -288,7 +295,7 @@ export default function KrishiSahayiAI() {
   }
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
+    <div className="min-h-[100svh] bg-background flex flex-col">
       {/* Header */}
       <header className="bg-primary text-primary-foreground p-4 shadow-sm">
         <div className="max-w-4xl mx-auto flex items-center justify-between">
@@ -331,7 +338,7 @@ export default function KrishiSahayiAI() {
 
       {/* Chat Area */}
       <div className="flex-1 max-w-4xl mx-auto w-full p-4">
-        <Card className="h-[calc(100vh-200px)] flex flex-col">
+        <Card className="h-[calc(100svh-200px)] sm:h-[calc(100vh-200px)] flex flex-col">
           <ScrollArea className="flex-1 p-4">
             <div className="space-y-4">
               {messages.map((message) => (
@@ -417,11 +424,11 @@ export default function KrishiSahayiAI() {
               )}
               <div className="flex gap-2 items-center">
                 <div className="flex gap-2">
-                  <label className="inline-flex items-center justify-center h-10 w-10 rounded-md border cursor-pointer">
+                  <label className="inline-flex items-center justify-center h-12 w-12 sm:h-10 sm:w-10 rounded-md border cursor-pointer active:scale-[0.98] transition">
                     <input type="file" accept="image/*" className="hidden" onChange={handleImageChange} />
                     <ImageIcon className="h-4 w-4" />
                   </label>
-                  <Button type="button" variant={isRecording ? "destructive" : "outline"} size="icon" className="h-10 w-10" onClick={toggleRecording}>
+                  <Button type="button" variant={isRecording ? "destructive" : "outline"} size="icon" className="h-12 w-12 sm:h-10 sm:w-10" onClick={toggleRecording}>
                     {isRecording ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
                   </Button>
                 </div>
@@ -433,10 +440,10 @@ export default function KrishiSahayiAI() {
                       ? "നിങ്ങളുടെ കൃഷി സംബന്ധമായ ചോദ്യം ഇവിടെ ടൈപ്പ് ചെയ്യൂ..."
                       : "Type your agriculture-related question here..."
                   }
-                  className="flex-1 text-base"
+                  className="flex-1 text-base h-12 sm:h-10"
                   disabled={isLoading}
                 />
-                <Button type="submit" size="icon" disabled={isLoading || (!input.trim() && !selectedImage)} className="h-10 w-10">
+                <Button type="submit" size="icon" disabled={isLoading || (!input.trim() && !selectedImage)} className="h-12 w-12 sm:h-10 sm:w-10">
                   <Send className="h-4 w-4" />
                 </Button>
               </div>
