@@ -2,12 +2,12 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card } from "@/components/ui/card"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Leaf, Send, Bot, User, Languages, ExternalLink } from "lucide-react"
+import { Leaf, Send, Bot, User, Languages, ExternalLink, Image as ImageIcon, Mic, MicOff, X, Volume2 } from "lucide-react"
 
 interface Message {
   id: string
@@ -32,6 +32,64 @@ export default function KrishiSahayiAI() {
   ])
   const [input, setInput] = useState("")
   const [isLoading, setIsLoading] = useState(false)
+  const [selectedImage, setSelectedImage] = useState<string | null>(null)
+  const [isRecording, setIsRecording] = useState(false)
+  const recognitionRef = useRef<SpeechRecognition | null>(null as any)
+  const endRef = useRef<HTMLDivElement | null>(null)
+  const voicesRef = useRef<SpeechSynthesisVoice[] | null>(null)
+
+  useEffect(() => {
+    // Setup Web Speech API if available
+    const SpeechRecognitionImpl = (typeof window !== 'undefined') && ((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition)
+    if (SpeechRecognitionImpl) {
+      const recognition = new SpeechRecognitionImpl()
+      recognition.lang = language === 'malayalam' ? 'ml-IN' : 'en-IN'
+      recognition.interimResults = true
+      recognition.continuous = false
+
+      recognition.onresult = (event: SpeechRecognitionEvent) => {
+        let transcript = ""
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          transcript += event.results[i][0].transcript
+        }
+        setInput((prev) => transcript)
+      }
+
+      recognition.onend = () => {
+        setIsRecording(false)
+      }
+
+      recognitionRef.current = recognition
+    }
+
+    // Preload available voices for TTS
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+      const loadVoices = () => {
+        const voices = window.speechSynthesis.getVoices()
+        voicesRef.current = voices
+      }
+      loadVoices()
+      window.speechSynthesis.onvoiceschanged = loadVoices
+    }
+  }, [language])
+
+  useEffect(() => {
+    // Auto scroll to bottom when messages or loading state changes
+    endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end', inline: 'nearest' })
+  }, [messages, isLoading])
+
+  useEffect(() => {
+    // Auto-speak latest assistant reply when Malayalam is selected
+    if (language !== 'malayalam') return
+    if (!messages.length) return
+    const last = messages[messages.length - 1]
+    if (last.role !== 'assistant') return
+    // Debounce slightly to avoid overlap with typing indicator
+    const t = setTimeout(() => {
+      speakMalayalam(last.content)
+    }, 150)
+    return () => clearTimeout(t)
+  }, [messages, language])
 
   const toggleLanguage = () => {
     const newLanguage = language === "malayalam" ? "english" : "malayalam"
@@ -51,20 +109,105 @@ export default function KrishiSahayiAI() {
     ])
   }
 
+  const getVoicesAsync = (): Promise<SpeechSynthesisVoice[]> => {
+    return new Promise((resolve) => {
+      if (typeof window === 'undefined' || !window.speechSynthesis) {
+        resolve([])
+        return
+      }
+      const existing = window.speechSynthesis.getVoices()
+      if (existing && existing.length > 0) {
+        resolve(existing)
+        return
+      }
+      const handle = () => {
+        const list = window.speechSynthesis.getVoices()
+        if (list && list.length > 0) {
+          window.speechSynthesis.onvoiceschanged = null
+          resolve(list)
+        }
+      }
+      window.speechSynthesis.onvoiceschanged = handle
+      // Fallback timeout in case event doesn't fire
+      setTimeout(() => resolve(window.speechSynthesis.getVoices()), 1500)
+    })
+  }
+
+  const speakMalayalam = async (text: string) => {
+    if (typeof window === 'undefined' || !window.speechSynthesis) return
+    try {
+      window.speechSynthesis.cancel()
+      const utterance = new SpeechSynthesisUtterance(text)
+      const voices = voicesRef.current && voicesRef.current.length > 0
+        ? voicesRef.current
+        : await getVoicesAsync()
+
+      // Best-effort selection: Malayalam > India regional > default
+      const candidates = voices || []
+      const mlByLang = candidates.find(v => v.lang && v.lang.toLowerCase().startsWith('ml'))
+      const mlByName = candidates.find(v => v.name && v.name.toLowerCase().includes('malayalam'))
+      const indian = candidates.find(v => v.lang && v.lang.toLowerCase().includes('en-in'))
+      const chosen = mlByLang || mlByName || indian || candidates[0]
+
+      if (chosen) {
+        utterance.voice = chosen
+        utterance.lang = chosen.lang || 'ml-IN'
+      } else {
+        utterance.lang = 'ml-IN'
+      }
+      utterance.rate = 1
+      utterance.pitch = 1
+      window.speechSynthesis.speak(utterance)
+    } catch (e) {
+      console.error('Malayalam TTS failed:', e)
+    }
+  }
+
+  const speakEnglish = async (text: string) => {
+    if (typeof window === 'undefined' || !window.speechSynthesis) return
+    try {
+      window.speechSynthesis.cancel()
+      const utterance = new SpeechSynthesisUtterance(text)
+      const voices = voicesRef.current && voicesRef.current.length > 0
+        ? voicesRef.current
+        : await getVoicesAsync()
+
+      const candidates = voices || []
+      const enIN = candidates.find(v => v.lang && v.lang.toLowerCase() === 'en-in')
+      const enUS = candidates.find(v => v.lang && v.lang.toLowerCase() === 'en-us')
+      const enGeneric = candidates.find(v => v.lang && v.lang.toLowerCase().startsWith('en'))
+      const chosen = enIN || enUS || enGeneric || candidates[0]
+
+      if (chosen) {
+        utterance.voice = chosen
+        utterance.lang = chosen.lang || 'en-IN'
+      } else {
+        utterance.lang = 'en-IN'
+      }
+      utterance.rate = 1
+      utterance.pitch = 1
+      window.speechSynthesis.speak(utterance)
+    } catch (e) {
+      console.error('English TTS failed:', e)
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!input.trim()) return
+    if (!input.trim() && !selectedImage) return
 
     const userMessage: Message = {
       id: Date.now().toString(),
-      content: input,
+      content: input || (language === 'malayalam' ? 'ചിത്രം അയച്ചു' : 'Sent an image'),
       role: "user",
       timestamp: new Date(),
     }
 
     setMessages((prev) => [...prev, userMessage])
     const userInput = input
+    const imageToSend = selectedImage
     setInput("")
+    setSelectedImage(null)
     setIsLoading(true)
 
     try {
@@ -77,6 +220,7 @@ export default function KrishiSahayiAI() {
         body: JSON.stringify({
           message: userInput,
           language: language,
+          imageData: imageToSend,
         }),
       })
 
@@ -110,6 +254,36 @@ export default function KrishiSahayiAI() {
       setMessages((prev) => [...prev, aiResponse])
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = reader.result as string
+      setSelectedImage(result)
+    }
+    reader.readAsDataURL(file)
+  }
+
+  const clearSelectedImage = () => setSelectedImage(null)
+
+  const toggleRecording = () => {
+    if (!recognitionRef.current) return
+    if (isRecording) {
+      recognitionRef.current.stop()
+      setIsRecording(false)
+    } else {
+      try {
+        recognitionRef.current.lang = language === 'malayalam' ? 'ml-IN' : 'en-IN'
+        recognitionRef.current.start()
+        setIsRecording(true)
+      } catch (err) {
+        console.error('Speech recognition error:', err)
+        setIsRecording(false)
+      }
     }
   }
 
@@ -177,7 +351,21 @@ export default function KrishiSahayiAI() {
                         : "bg-muted text-muted-foreground"
                     }`}
                   >
-                    <p className="text-sm leading-relaxed">{message.content}</p>
+                    <div className="flex items-start gap-2">
+                      <p className="text-sm leading-relaxed whitespace-pre-wrap flex-1">{message.content}</p>
+                      {message.role === 'assistant' && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7"
+                          aria-label={language === 'malayalam' ? 'Speak Malayalam' : 'Speak English'}
+                          onClick={() => language === 'malayalam' ? speakMalayalam(message.content) : speakEnglish(message.content)}
+                        >
+                          <Volume2 className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </div>
                     <span className="text-xs opacity-70 mt-1 block">
                       {message.timestamp.toLocaleTimeString("en-US", {
                         hour: "2-digit",
@@ -192,6 +380,7 @@ export default function KrishiSahayiAI() {
                   )}
                 </div>
               ))}
+              <div ref={endRef} className="h-1" />
               {isLoading && (
                 <div className="flex gap-3 justify-start">
                   <div className="bg-primary text-primary-foreground p-2 rounded-full h-8 w-8 flex items-center justify-center flex-shrink-0">
@@ -217,21 +406,40 @@ export default function KrishiSahayiAI() {
 
           {/* Input Area */}
           <div className="border-t p-4">
-            <form onSubmit={handleSubmit} className="flex gap-2">
-              <Input
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                placeholder={
-                  language === "malayalam"
-                    ? "നിങ്ങളുടെ കൃഷി സംബന്ധമായ ചോദ്യം ഇവിടെ ടൈപ്പ് ചെയ്യൂ..."
-                    : "Type your agriculture-related question here..."
-                }
-                className="flex-1 text-base"
-                disabled={isLoading}
-              />
-              <Button type="submit" size="icon" disabled={isLoading || !input.trim()} className="h-10 w-10">
-                <Send className="h-4 w-4" />
-              </Button>
+            <form onSubmit={handleSubmit} className="flex flex-col gap-2">
+              {selectedImage && (
+                <div className="relative w-full">
+                  <img src={selectedImage} alt="Selected" className="max-h-48 rounded-md object-contain border" />
+                  <Button type="button" variant="secondary" size="icon" className="absolute top-2 right-2 h-8 w-8" onClick={clearSelectedImage}>
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
+              <div className="flex gap-2 items-center">
+                <div className="flex gap-2">
+                  <label className="inline-flex items-center justify-center h-10 w-10 rounded-md border cursor-pointer">
+                    <input type="file" accept="image/*" className="hidden" onChange={handleImageChange} />
+                    <ImageIcon className="h-4 w-4" />
+                  </label>
+                  <Button type="button" variant={isRecording ? "destructive" : "outline"} size="icon" className="h-10 w-10" onClick={toggleRecording}>
+                    {isRecording ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                  </Button>
+                </div>
+                <Input
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  placeholder={
+                    language === "malayalam"
+                      ? "നിങ്ങളുടെ കൃഷി സംബന്ധമായ ചോദ്യം ഇവിടെ ടൈപ്പ് ചെയ്യൂ..."
+                      : "Type your agriculture-related question here..."
+                  }
+                  className="flex-1 text-base"
+                  disabled={isLoading}
+                />
+                <Button type="submit" size="icon" disabled={isLoading || (!input.trim() && !selectedImage)} className="h-10 w-10">
+                  <Send className="h-4 w-4" />
+                </Button>
+              </div>
             </form>
             <p className="text-xs text-muted-foreground mt-2 text-center">
               {language === "malayalam"
