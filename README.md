@@ -2,6 +2,15 @@
 
 A Next.js-based web application for Krishi Sahayi AI.
 
+## Features
+- Multilingual chatbot: Malayalam and English
+- Image search/recognition: attach an image and get vision-assisted replies
+- Speech to Text (STT): dictate your question with the mic button
+- Text to Speech (TTS): listen to assistant replies
+  - Malayalam TTS (auto-speaks new Malayalam replies and replay via speaker button)
+  - English TTS (replay via speaker button)
+- Smooth chat experience with auto-scroll to newest messages
+
 ## Tech Stack
 - **Framework**: Next.js 14 (App Router)
 - **Language**: TypeScript
@@ -56,13 +65,11 @@ npm start
 ```
 
 ## Environment Variables
-Create a `.env` file in the project root for any secrets/keys used by the app.
-Example:
+Create a `.env.local` file in the project root with your Gemini API key:
 ```
-# Example
-# NEXT_PUBLIC_API_BASE_URL=https://api.example.com
-# OPENAI_API_KEY=...
+GEMINI_API_KEY=your_actual_api_key_here
 ```
+See `GEMINI_SETUP.md` for step-by-step setup.
 
 ## Scripts
 Common scripts defined in `package.json`:
@@ -77,6 +84,31 @@ This project uses shadcn/ui components found under `components/ui/` and a theme 
 ## API Routes
 Custom API route(s) live under `app/api/`. For example:
 - `app/api/chat/route.ts` – chat-related API handler.
+
+### Chat API: Multimodal (Text + Image)
+- Endpoint: `/api/chat`
+- Method: POST
+- Body:
+  ```json
+  {
+    "message": "Your prompt text (optional if sending only an image)",
+    "language": "malayalam" | "english",
+    "imageData": "data:<mime>;base64,<...>" // optional
+  }
+  ```
+The backend uses Gemini 1.5 Flash and supports `inlineData` for vision.
+
+## Using the App
+- Language toggle in header switches between Malayalam and English.
+- Type text in the input or click the mic icon to dictate (STT).
+- Click the image icon to attach a photo; you can send an image alone or with text.
+- Click the speaker icon on assistant messages to hear the response.
+  - Malayalam is auto-spoken when Malayalam is selected.
+
+## Browser Permissions & Compatibility
+- STT and TTS use the Web Speech APIs in the browser.
+  - Best supported in Chrome. If a Malayalam voice is not available on your device, playback will fall back to the best available voice.
+  - Microphone permissions are required for STT.
 
 ## Contributing
 1. Create a feature branch
